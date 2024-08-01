@@ -5,6 +5,7 @@ import requests
 import argparse
 import urllib3
 import warnings
+import sys
 
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -16,7 +17,7 @@ def util_validate(match):
 def find_urls_and_endpoints(domain):
     try:
         # Get the page HTML
-        response = requests.get(domain, verify=False,timeout=5)  # Added verify=False to ignore SSL certificate verification
+        response = requests.get(domain, verify=False, timeout=5)  # Added verify=False to ignore SSL certificate verification
         soup = BeautifulSoup(response.text, 'html.parser')
     except Exception as e:
         print(f"Error: Unable to connect to the domain {domain}")
@@ -50,7 +51,7 @@ def find_urls_and_endpoints(domain):
     for script in scripts:
         src = urljoin(domain, script['src'])
         try:
-            response = requests.get(src, verify=False,timeout=5)  # Added verify=False to ignore SSL certificate verification
+            response = requests.get(src, verify=False, timeout=5)  # Added verify=False to ignore SSL certificate verification
             find_and_print_matches(response.text, src, domain, regex_patterns)
         except Exception as e:
             print(f"Error: Unable to fetch the script {src}")
@@ -68,30 +69,27 @@ def find_and_print_matches(text, src, domain, regex_patterns):
         filtered_matches = []
         for match in matches:
             # Check if the match is a valid URL or endpoint
-
             if isinstance(match, tuple): 
                 match = match[0]
 
             if util_validate(match):
                 continue
-            
-            if (not (match.startswith('http') or match.startswith('https'))):
+
+            if not (match.startswith('http') or match.startswith('https')):
                 if match.startswith('/'):
-                    filtered_matches.append(domain+match)
+                    filtered_matches.append(domain + match)
                 else:
-                    filtered_matches.append(domain+'/'+match) 
-            
+                    filtered_matches.append(domain + '/' + match) 
             elif match.startswith('http') or match.startswith('https'):
                 filtered_matches.append(match)
-                           
             elif match.startswith('//'):
                 match = re.sub(r'^//+', '', match)
                 filtered_matches.append(match)
-
             elif match.startswith('/'):
-                filtered_matches.append(src+match)
+                filtered_matches.append(src + match)
             else:
                 filtered_matches.append(match)
+
         # Add filtered matches to the set
         unique_matches.update(filtered_matches)
 
@@ -99,13 +97,16 @@ def find_and_print_matches(text, src, domain, regex_patterns):
     for match in unique_matches:
         print(f"{domain} {match}")
 
-
 def main():
-    parser = argparse.ArgumentParser(description="Find all URLs and endpoints in a domain.")
-    parser.add_argument('domain', type=str, help='The domain to search.')
+    parser = argparse.ArgumentParser(description="Find all URLs and endpoints in a list of domains.")
+    parser.add_argument('file', type=argparse.FileType('r'), help='A file containing the list of domains.')
     args = parser.parse_args()
 
-    find_urls_and_endpoints(args.domain)
+    # Read each domain from the file and process it
+    for line in args.file:
+        domain = line.strip()
+        if domain:
+            find_urls_and_endpoints(domain)
 
 if __name__ == '__main__':
     main()
