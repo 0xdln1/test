@@ -69,7 +69,7 @@ def find_and_print_matches(text, src, domain, regex_patterns):
         filtered_matches = []
         for match in matches:
             # Check if the match is a valid URL or endpoint
-            if isinstance(match, tuple): 
+            if isinstance(match, tuple):
                 match = match[0]
 
             if util_validate(match):
@@ -98,12 +98,11 @@ def find_and_print_matches(text, src, domain, regex_patterns):
         print(f"{domain} {match}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Find all URLs and endpoints in a list of domains.")
-    parser.add_argument('file', type=argparse.FileType('r'), help='A file containing the list of domains.')
+    parser = argparse.ArgumentParser(description="Find all URLs and endpoints from a list of domains via stdin.")
     args = parser.parse_args()
 
-    # Read each domain from the file and process it
-    for line in args.file:
+    # Read each domain from stdin and process it
+    for line in sys.stdin:
         domain = line.strip()
         if domain:
             find_urls_and_endpoints(domain)
