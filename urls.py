@@ -76,17 +76,17 @@ def find_and_print_matches(text, src, domain, regex_patterns):
                 continue
 
             if not (match.startswith('http') or match.startswith('https')):
-                if match.startswith('/'):
-                    filtered_matches.append(domain + match)
+                if match.startswith('//'):
+                    match = re.sub(r'^//+', '', match)
+                    filtered_matches.append(match)
+                elif match.startswith('/'):
+                    filtered_matches.append(src + match)
+                elif match.startswith('data:'):
+                    pass
                 else:
                     filtered_matches.append(domain + '/' + match) 
             elif match.startswith('http') or match.startswith('https'):
                 filtered_matches.append(match)
-            elif match.startswith('//'):
-                match = re.sub(r'^//+', '', match)
-                filtered_matches.append(match)
-            elif match.startswith('/'):
-                filtered_matches.append(src + match)
             else:
                 filtered_matches.append(match)
 
