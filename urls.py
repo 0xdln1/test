@@ -1,4 +1,4 @@
-from urllib.parse import urljoin
+from urllib.parse import urljoin , urlparse
 from bs4 import BeautifulSoup
 import re
 import requests
@@ -10,6 +10,10 @@ import sys
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
+
+def domain_of_src(url):
+    parsed_url = urlparse(url)
+    return f"{parsed_url.scheme}://{parsed_url.netloc}"
 
 def util_validate(match):
     return "\n" in match or ' ' in match
@@ -76,13 +80,26 @@ def find_and_print_matches(text, src, domain, regex_patterns):
                 continue
 
             if not (match.startswith('http') or match.startswith('https')):
-                if match.startswith('//'):
+                if match.startswith('data:'):
+                    pass
+                elif match.startswith('"data:'):
+                    pass
+                elif match.startswith("'data:"):
+                    pass
+                elif match.startswith("'"):
+                    match = re.sub(r"^'", "", match)
+                    filtered_matches.append(match)
+                elif match.startswith('"'):
+                    match = re.sub(r'^"', '', match)
+                    filtered_matches.append(match)
+                elif match.startswith('//'):
                     match = re.sub(r'^//+', '', match)
                     filtered_matches.append(match)
                 elif match.startswith('/'):
-                    filtered_matches.append(src + match)
-                elif match.startswith('data:'):
-                    pass
+                    if '.js' in src:
+                        filtered_matches.append(domain_of_src(src) + match)
+                    else:
+                        filtered_matches.append(src + match)
                 else:
                     filtered_matches.append(domain + '/' + match) 
             elif match.startswith('http') or match.startswith('https'):
