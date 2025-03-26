@@ -1,19 +1,14 @@
-from urllib.parse import urljoin , urlparse
+from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 import re
 import requests
 import argparse
 import urllib3
 import warnings
-import sys
 
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
-
-def domain_of_src(url):
-    parsed_url = urlparse(url)
-    return f"{parsed_url.scheme}://{parsed_url.netloc}"
 
 def util_validate(match):
     return "\n" in match or ' ' in match
@@ -21,7 +16,7 @@ def util_validate(match):
 def find_urls_and_endpoints(domain):
     try:
         # Get the page HTML
-        response = requests.get(domain, verify=False, timeout=5)  # Added verify=False to ignore SSL certificate verification
+        response = requests.get(domain, verify=False,timeout=5)  # Added verify=False to ignore SSL certificate verification
         soup = BeautifulSoup(response.text, 'html.parser')
     except Exception as e:
         print(f"Error: Unable to connect to the domain {domain}")
@@ -55,7 +50,7 @@ def find_urls_and_endpoints(domain):
     for script in scripts:
         src = urljoin(domain, script['src'])
         try:
-            response = requests.get(src, verify=False, timeout=5)  # Added verify=False to ignore SSL certificate verification
+            response = requests.get(src, verify=False,timeout=5)  # Added verify=False to ignore SSL certificate verification
             find_and_print_matches(response.text, src, domain, regex_patterns)
         except Exception as e:
             print(f"Error: Unable to fetch the script {src}")
@@ -73,37 +68,37 @@ def find_and_print_matches(text, src, domain, regex_patterns):
         filtered_matches = []
         for match in matches:
             # Check if the match is a valid URL or endpoint
-            if isinstance(match, tuple):
+
+
+            if isinstance(match, tuple): 
                 match = match[0]
 
             if util_validate(match):
                 continue
+            
+            # sanitize match (to remove quotes)
+            match = match.strip('\'')
 
-            if not (match.startswith('http') or match.startswith('https')):
-                if match.startswith('data:'):
-                    pass
-                elif match.startswith('"data:'):
-                    pass
-                elif match.startswith("'data:"):
-                    pass
-                elif match.startswith("'"):
-                    match = re.sub(r"^'", "", match)
-                    filtered_matches.append(match)
-                elif match.startswith('"'):
-                    match = re.sub(r'^"', '', match)
-                    filtered_matches.append(match)
-                elif match.startswith('//'):
-                    match = re.sub(r'^//+', '', match)
-                    filtered_matches.append(match)
-                elif match.startswith('/'):
-                    if '.js' in src:
-                        filtered_matches.append(domain_of_src(src) + match)
-                    else:
-                        filtered_matches.append(src + match)
+            if (not (match.startswith('http') or match.startswith('https'))):
+                if match.startswith('/'):
+                    filtered_matches.append(domain+match)
+                elif match.startswith('data:' or '/data:' ):
+                    continue
                 else:
-                    filtered_matches.append(domain + '/' + match) 
+                    filtered_matches.append(domain+'/'+match) 
+            
             elif match.startswith('http') or match.startswith('https'):
                 filtered_matches.append(match)
+
+                           
+            elif match.startswith('//'):
+                match = re.sub(r'^//+', '', match)
+                filtered_matches.append(match)
+
+
+            elif match.startswith('/'):
+                filtered_matches.append(src+match)
+
             else:
                 filtered_matches.append(match)
 
@@ -115,14 +110,11 @@ def find_and_print_matches(text, src, domain, regex_patterns):
         print(f"{domain} {match}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Find all URLs and endpoints from a list of domains via stdin.")
+    parser = argparse.ArgumentParser(description="Find all URLs and endpoints in a domain.")
+    parser.add_argument('domain', type=str, help='The domain to search.')
     args = parser.parse_args()
 
-    # Read each domain from stdin and process it
-    for line in sys.stdin:
-        domain = line.strip()
-        if domain:
-            find_urls_and_endpoints(domain)
+    find_urls_and_endpoints(args.domain)
 
 if __name__ == '__main__':
     main()
