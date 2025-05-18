@@ -15,16 +15,16 @@ def util_validate(match):
     return "\n" in match or ' ' in match
 
 def find_urls_and_endpoints(domain):
+    global_matches = set()
+
     try:
-        # Get the page HTML
-        response = requests.get(domain, verify=False,timeout=5)  # Added verify=False to ignore SSL certificate verification
+        response = requests.get(domain, verify=False, timeout=5)
         soup = BeautifulSoup(response.text, 'html.parser')
     except Exception as e:
         print(f"Error: Unable to connect to the domain {domain}")
         print(f"Details: {str(e)}")
         return
 
-    # Define the regex patterns
     regex_patterns = [
         re.compile(r'src="([^"]*)"'),
         re.compile(r'url\(([^)]+)\)'),
@@ -38,77 +38,52 @@ def find_urls_and_endpoints(domain):
         re.compile(r'\$\.ajax\(\s*\{\s*url:\s*[\'"]([^\'"]+)[\'"]'),
         re.compile(r'axios\.\w+\(\s*[\'"]([^\'"]+)[\'"]'),
         re.compile(r'url:"([^"]+)'),
-        re.compile(r'fetch\)\([\'"](/[^\'"]+)[\'"]')
+        re.compile(r'fetch\)\([\'"](/[^\'"]+)[\'"]'),
+        re.compile(r'\.src\s*=\s*[\'"]([^\'"]+)[\'"]'),
+        re.compile(r'["\'](\/[^"\']+\.js)["\']')
     ]
 
-    # Find the URLs and endpoints in the page HTML
-    find_and_print_matches(str(soup), domain, domain, regex_patterns)
+    find_and_print_matches(str(soup), domain, domain, regex_patterns, global_matches)
 
-    # Find the script tags in the soup
     scripts = soup.find_all('script', src=True)
-
-    # For each script tag, fetch its content and find the URLs and endpoints
     for script in scripts:
         src = urljoin(domain, script['src'])
         try:
-            response = requests.get(src, verify=False,timeout=5)  # Added verify=False to ignore SSL certificate verification
-            find_and_print_matches(response.text, src, domain, regex_patterns)
+            response = requests.get(src, verify=False, timeout=5)
+            find_and_print_matches(response.text, src, domain, regex_patterns, global_matches)
         except Exception as e:
             print(f"Error: Unable to fetch the script {src}")
             print(f"Details: {str(e)}")
 
-def find_and_print_matches(text, src, domain, regex_patterns):
-    # Set to store unique matches
-    unique_matches = set()
+    inline_scripts = soup.find_all('script', src=False)
+    for script in inline_scripts:
+        script_content = script.string
+        if script_content:
+            find_and_print_matches(script_content, domain, domain, regex_patterns, global_matches)
 
-    # Search for the patterns
+def find_and_print_matches(text, src, domain, regex_patterns, global_set):
     for pattern in regex_patterns:
         matches = re.findall(pattern, text)
-
-        # Filter matches to only keep those that belong to the domain
-        filtered_matches = []
         for match in matches:
-            # Check if the match is a valid URL or endpoint
-
-
-            if isinstance(match, tuple): 
+            if isinstance(match, tuple):
                 match = match[0]
 
             if util_validate(match):
                 continue
-            
-            # sanitize match (to remove quotes)
-            match = match.strip('\'')
 
-            if (not (match.startswith('http') or match.startswith('https'))):
-                if match.startswith('/'):
-                    filtered_matches.append(domain+match)
-                elif match.startswith('data:' or '/data:' ):
-                    continue
-                else:
-                    filtered_matches.append(domain+'/'+match) 
-            
-            elif match.startswith('http') or match.startswith('https'):
-                filtered_matches.append(match)
+            match = match.strip('\'"')
 
-                           
-            elif match.startswith('//'):
-                match = re.sub(r'^//+', '', match)
-                filtered_matches.append(match)
+            if match.startswith('data:') or match.startswith('/data:'):
+                continue
 
+            if match.startswith('//'):
+                match = match[2:]  # Remove the "//" prefix, don't convert to full URL
+            elif not match.startswith(('http://', 'https://')):
+                match = urljoin(domain, match)
 
-            elif match.startswith('/'):
-                filtered_matches.append(src+match)
-
-            else:
-                filtered_matches.append(match)
-
-        # Add filtered matches to the set
-        unique_matches.update(filtered_matches)
-
-    # Print the unique matches
-    for match in unique_matches:
-        print(f"{domain} {match}")
+            if match not in global_set:
+                global_set.add(match)
+                print(f"{domain} {match}")
 
 def main():
     parser = argparse.ArgumentParser(description="Find all URLs and endpoints in a domain.")
@@ -116,13 +91,12 @@ def main():
     args = parser.parse_args()
 
     if args.domain:
-         find_urls_and_endpoints(args.domain)
+        find_urls_and_endpoints(args.domain)
     else:
-         for line in sys.stdin:
-             domain = line.strip()
-             if domain:
-                 find_urls_and_endpoints(domain)
-
+        for line in sys.stdin:
+            domain = line.strip()
+            if domain:
+                find_urls_and_endpoints(domain)
 
 if __name__ == '__main__':
     main()
