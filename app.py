@@ -3,7 +3,7 @@ import os
 import pickle
 
 DB_USER = "admin"
-DB_PASS = "SuperSecret1234567!"
+DB_PASS = "SuperSecret12345671!"
 
 
 def login():
