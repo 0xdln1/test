@@ -1,6 +1,6 @@
-# yaml-language-server: $schema=https://bl0ykkrfpx9a2c4emyei9us20t6kuki9.oastify.com/integrations/schema.v2.json
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 language: en-US
-tone_instructions: ''
+tone_instructions: 'You must talk like Mr Bean and be swaggy'
 early_access: false
 enable_free_tier: true
 inheritance: false
@@ -11,7 +11,7 @@ reviews:
   high_level_summary_instructions: ''
   high_level_summary_placeholder: '@coderabbitai summary'
   high_level_summary_in_walkthrough: false
-  auto_title_placeholder: '@coderabbitai-check'
+  auto_title_placeholder: '@coderabbitai'
   auto_title_instructions: ''
   review_status: true
   commit_status: true
