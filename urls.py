@@ -1,102 +1,135 @@
-from urllib.parse import urljoin
-from bs4 import BeautifulSoup
-import re
+#!/usr/bin/env python3
+"""
+Enhanced URL Extractor - Extracts all URLs from a given URL
+Optimized for cache poisoning detection (includes all static assets)
+Output format: JSON lines for easy parsing
+"""
 import sys
-import requests
-import argparse
-import urllib3
-import warnings
+import re
+import json
+from urllib.parse import urljoin, urlparse
+from collections import OrderedDict
 
-# Disable SSL warnings
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
+try:
+    import requests
+    from bs4 import BeautifulSoup
+except ImportError:
+    print("Error: Install dependencies: pip install requests beautifulsoup4", file=sys.stderr)
+    sys.exit(1)
 
-def util_validate(match):
-    return "\n" in match or ' ' in match
-
-def find_urls_and_endpoints(domain):
-    global_matches = set()
-
+def extract_urls(source_url, timeout=10):
+    """Extract all URLs from a given URL"""
+    urls = OrderedDict()  # Preserve order, auto-deduplicate
+    
     try:
-        response = requests.get(domain, verify=False, timeout=5)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(source_url, headers=headers, timeout=timeout, verify=False)
+        response.raise_for_status()
+        
+        # Parse HTML
         soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extract from common tags
+        # <script src="...">
+        for tag in soup.find_all('script', src=True):
+            url = urljoin(source_url, tag['src'])
+            urls[url] = 'script'
+        
+        # <link href="..."> (CSS, icons, etc.)
+        for tag in soup.find_all('link', href=True):
+            url = urljoin(source_url, tag['href'])
+            urls[url] = 'link'
+        
+        # <img src="...">
+        for tag in soup.find_all('img', src=True):
+            url = urljoin(source_url, tag['src'])
+            urls[url] = 'img'
+        
+        # <a href="...">
+        for tag in soup.find_all('a', href=True):
+            url = urljoin(source_url, tag['href'])
+            # Skip anchors and javascript
+            if not url.startswith(('#', 'javascript:', 'mailto:', 'tel:')):
+                urls[url] = 'link'
+        
+        # <iframe src="...">
+        for tag in soup.find_all('iframe', src=True):
+            url = urljoin(source_url, tag['src'])
+            urls[url] = 'iframe'
+        
+        # <video src="..."> and <source src="...">
+        for tag in soup.find_all(['video', 'source'], src=True):
+            url = urljoin(source_url, tag['src'])
+            urls[url] = 'media'
+        
+        # Extract from inline scripts and styles (regex)
+        # Look for URLs in quotes
+        url_pattern = r'["\']((https?:)?//[^"\']+)["\']'
+        for match in re.finditer(url_pattern, response.text):
+            url = match.group(1)
+            if url.startswith('//'):
+                url = 'https:' + url
+            if url.startswith('http'):
+                urls[url] = 'inline'
+        
+        # Extract from CSS (background-image, etc.)
+        css_url_pattern = r'url\(["\']?([^"\')]+)["\']?\)'
+        for match in re.finditer(css_url_pattern, response.text):
+            url = urljoin(source_url, match.group(1))
+            urls[url] = 'css'
+        
+    except requests.exceptions.RequestException as e:
+        print(json.dumps({
+            "source": source_url,
+            "error": str(e),
+            "extracted": []
+        }), file=sys.stderr)
+        return []
     except Exception as e:
-        print(f"Error: Unable to connect to the domain {domain}")
-        print(f"Details: {str(e)}")
-        return
-
-    regex_patterns = [
-        re.compile(r'src="([^"]*)"'),
-        re.compile(r'url\(([^)]+)\)'),
-        re.compile(r'xml:"([^"\s]*)"', re.IGNORECASE),
-        re.compile(r'<script[^>]*src="([^"]*)"[^>]*>', re.IGNORECASE),
-        re.compile(r'(https:\/\/[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*(\/[a-zA-Z0-9-._%&?=\/+@#:]+)*)'),
-        re.compile(r'url\s*=\s*`(.*?)`'),
-        re.compile(r'href="([^"]*)"'),
-        re.compile(r'fetch\(\s*[\'"]([^\'"]+)[\'"]'),
-        re.compile(r'open\(\s*[\'"][A-Z]+[\'"],\s*[\'"]([^\'"]+)[\'"]'),
-        re.compile(r'\$\.ajax\(\s*\{\s*url:\s*[\'"]([^\'"]+)[\'"]'),
-        re.compile(r'axios\.\w+\(\s*[\'"]([^\'"]+)[\'"]'),
-        re.compile(r'url:"([^"]+)'),
-        re.compile(r'fetch\)\([\'"](/[^\'"]+)[\'"]'),
-        re.compile(r'\.src\s*=\s*[\'"]([^\'"]+)[\'"]'),
-        re.compile(r'["\'](\/[^"\']+\.js)["\']')
-    ]
-
-    find_and_print_matches(str(soup), domain, domain, regex_patterns, global_matches)
-
-    scripts = soup.find_all('script', src=True)
-    for script in scripts:
-        src = urljoin(domain, script['src'])
-        try:
-            response = requests.get(src, verify=False, timeout=5)
-            find_and_print_matches(response.text, src, domain, regex_patterns, global_matches)
-        except Exception as e:
-            print(f"Error: Unable to fetch the script {src}")
-            print(f"Details: {str(e)}")
-
-    inline_scripts = soup.find_all('script', src=False)
-    for script in inline_scripts:
-        script_content = script.string
-        if script_content:
-            find_and_print_matches(script_content, domain, domain, regex_patterns, global_matches)
-
-def find_and_print_matches(text, src, domain, regex_patterns, global_set):
-    for pattern in regex_patterns:
-        matches = re.findall(pattern, text)
-        for match in matches:
-            if isinstance(match, tuple):
-                match = match[0]
-
-            if util_validate(match):
-                continue
-
-            match = match.strip('\'"')
-
-            if match.startswith('data:') or match.startswith('/data:'):
-                continue
-
-            if match.startswith('//'):
-                match = match[2:]  # Remove the "//" prefix, don't convert to full URL
-            elif not match.startswith(('http://', 'https://')):
-                match = urljoin(domain, match)
-
-            if match not in global_set:
-                global_set.add(match)
-                print(f"{domain} {match}")
+        print(json.dumps({
+            "source": source_url,
+            "error": f"Parse error: {str(e)}",
+            "extracted": []
+        }), file=sys.stderr)
+        return []
+    
+    return urls
 
 def main():
-    parser = argparse.ArgumentParser(description="Find all URLs and endpoints in a domain.")
-    parser.add_argument('domain', type=str, nargs='?', help='The domain to search.')
-    args = parser.parse_args()
-
-    if args.domain:
-        find_urls_and_endpoints(args.domain)
+    """Process URLs from stdin"""
+    if len(sys.argv) > 1:
+        # Single URL mode
+        source_url = sys.argv[1]
+        urls = extract_urls(source_url)
+        
+        result = {
+            "source": source_url,
+            "extracted_count": len(urls),
+            "urls": [{"url": url, "type": typ} for url, typ in urls.items()]
+        }
+        print(json.dumps(result))
     else:
+        # Batch mode from stdin
         for line in sys.stdin:
-            domain = line.strip()
-            if domain:
-                find_urls_and_endpoints(domain)
+            source_url = line.strip()
+            if not source_url:
+                continue
+            
+            urls = extract_urls(source_url)
+            
+            result = {
+                "source": source_url,
+                "extracted_count": len(urls),
+                "urls": [{"url": url, "type": typ} for url, typ in urls.items()]
+            }
+            print(json.dumps(result))
+            sys.stdout.flush()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    # Suppress SSL warnings
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    
     main()
